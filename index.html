@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+	<meta charset="utf-8">
+	<!-- viewport-fit=cover: 노치/홈인디케이터 영역까지 캔버스를 채운다 -->
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
+	<meta name="mobile-web-app-capable" content="yes">
+	<meta name="apple-mobile-web-app-capable" content="yes">
+	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+	<meta name="apple-mobile-web-app-title" content="SLOT SHOTS IDLE">
+	<meta name="theme-color" content="#000000">
+	<meta name="format-detection" content="telephone=no">
+	<title>SLOT SHOTS IDLE</title>
+	<style>
+* { margin:0; padding:0; border:0; box-sizing:border-box; }
+
+html, body {
+	width:100%; height:100%;
+	overflow:hidden;
+	background-color:#242424;
+	color:#fff;
+	/* 모바일: 당겨서 새로고침·바운스 스크롤·롱프레스 선택/콜아웃을 전부 죽인다.
+	   이 게임의 코어 제스처가 "길게 누르기 = 자동 강화"라 콜아웃 메뉴가 뜨면 조작이 깨진다. */
+	overscroll-behavior:none;
+	touch-action:none;
+	-webkit-user-select:none; user-select:none;
+	-webkit-touch-callout:none;
+	-webkit-tap-highlight-color:transparent;
+	font-family:'Pretendard','Noto Sans KR','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
+}
+
+/* 캔버스는 뷰포트 전체. dvh 를 쓰면 주소창이 접혔다 펴져도 잘리지 않는다. */
+#canvas {
+	display:block;
+	position:fixed; inset:0;
+	width:100%; height:100%;
+	height:100dvh;
+	outline:none;
+	touch-action:none;
+}
+
+/* ---------- 부팅 오버레이 ---------- */
+#boot {
+	position:fixed; inset:0; z-index:10;
+	display:flex; flex-direction:column; align-items:center; justify-content:center;
+	gap:22px; padding:32px 28px calc(32px + env(safe-area-inset-bottom));
+	background:radial-gradient(120% 90% at 50% 30%, #1b1226 0%, #000 70%);
+	text-align:center;
+	transition:opacity .35s ease;
+}
+#boot.gone { opacity:0; pointer-events:none; }
+
+#boot-splash {
+	max-width:min(56vw, 240px); max-height:44vh;
+	border-radius:8px;
+	object-fit:contain;
+	image-rendering:pixelated;
+	filter:drop-shadow(0 8px 30px rgba(0,0,0,.7));
+}
+#boot-splash.show-image--false { display:none; }
+
+#boot-title { font-size:clamp(19px, 5.6vw, 26px); font-weight:800; letter-spacing:-.4px; }
+#boot-sub   { font-size:clamp(12px, 3.4vw, 14px); color:#9b93ad; line-height:1.6; max-width:30em; }
+
+#bar { width:min(74vw, 320px); height:7px; border-radius:99px; background:#241a33; overflow:hidden; }
+#bar-fill { height:100%; width:0%; border-radius:99px; background:linear-gradient(90deg,#8b5cf6,#f0b429); transition:width .18s linear; }
+#bar-text { font-size:12px; color:#c8bfd8; font-variant-numeric:tabular-nums; letter-spacing:.3px; }
+
+#start {
+	display:none;
+	padding:17px 46px;
+	font-size:clamp(17px, 4.8vw, 20px); font-weight:800; letter-spacing:.5px;
+	color:#1a1020; background:linear-gradient(180deg,#ffd76a,#f0a429);
+	border-radius:99px; cursor:pointer;
+	box-shadow:0 8px 28px rgba(240,164,41,.38);
+	animation:pulse 1.7s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100%{transform:scale(1);} 50%{transform:scale(1.045);} }
+
+#boot.ready #bar, #boot.ready #bar-text { display:none; }
+#boot.ready #start { display:block; }
+
+/* ---------- 오류 안내 ---------- */
+#status-notice {
+	display:none;
+	max-width:32em;
+	background:#3a1f28; border:1px solid #9b3943; border-radius:10px;
+	padding:16px 18px; font-size:13px; line-height:1.55; color:#f0dde0;
+	white-space:pre-wrap; text-align:left;
+}
+
+/* ---------- 가로 모드 경고 ---------- */
+#rotate {
+	position:fixed; inset:0; z-index:20; display:none;
+	flex-direction:column; align-items:center; justify-content:center; gap:16px;
+	background:#000; color:#e8e2f2; font-size:16px; font-weight:700; text-align:center; padding:24px;
+}
+#rotate span { font-size:52px; line-height:1; animation:tilt 1.6s ease-in-out infinite; }
+@keyframes tilt { 0%,100%{transform:rotate(0);} 50%{transform:rotate(-90deg);} }
+/* 세로가 기본인 게임이라, 짧고 넓은 화면(=가로로 든 폰)일 때만 띄운다. */
+@media (orientation:landscape) and (max-height:520px) {
+	body.playing #rotate { display:flex; }
+}
+	</style>
+	<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
+<link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
+<link rel="manifest" href="index.manifest.json">
+
+</head>
+<body>
+	<canvas id="canvas">Your browser does not support the canvas tag.</canvas>
+	<noscript>이 게임을 실행하려면 JavaScript가 필요합니다.</noscript>
+
+	<div id="boot">
+		<img id="boot-splash" class="show-image--true fullsize--true use-filter--true" src="index.png" alt="">
+		<div id="boot-title">SLOT SHOTS IDLE</div>
+		<div id="bar"><div id="bar-fill"></div></div>
+		<div id="bar-text">불러오는 중…</div>
+		<div id="start">▶ 탭해서 시작</div>
+		<div id="boot-sub">
+			세로로 들고 플레이하세요 · 소리를 켜면 더 좋습니다<br>
+			첫 실행은 약 75MB를 내려받습니다 (Wi-Fi 권장)
+		</div>
+		<div id="status-notice"></div>
+	</div>
+
+	<div id="rotate"><span>📱</span>세로로 돌려주세요</div>
+
+	<script src="index.js"></script>
+	<script>
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":36498916,"index.wasm":39509339},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4,"serviceWorker":"index.service.worker.js"};
+const GODOT_THREADS_ENABLED = false;
+const engine = new Engine(GODOT_CONFIG);
+
+(function () {
+	const boot = document.getElementById('boot');
+	const barFill = document.getElementById('bar-fill');
+	const barText = document.getElementById('bar-text');
+	const startBtn = document.getElementById('start');
+	const notice = document.getElementById('status-notice');
+
+	// ---- 모바일 제스처 방역 -------------------------------------------------
+	// 롱프레스 콜아웃 / 더블탭 확대 / 핀치 확대는 전부 게임 조작과 충돌한다.
+	document.addEventListener('contextmenu', (e) => e.preventDefault(), { capture: true });
+	document.addEventListener('gesturestart', (e) => e.preventDefault(), { passive: false });
+	document.addEventListener('selectstart', (e) => e.preventDefault());
+	let lastTouchEnd = 0;
+	document.addEventListener('touchend', (e) => {
+		const now = Date.now();
+		if (now - lastTouchEnd < 320) { e.preventDefault(); }
+		lastTouchEnd = now;
+	}, { passive: false });
+
+	function fail(err) {
+		console.error(err);
+		const msg = (err instanceof Error) ? err.message : String(err);
+		notice.textContent = '실행에 실패했습니다.\n\n' + msg
+			+ '\n\n최신 Chrome / Safari 로 다시 열어 보세요. 기기 메모리가 부족하면 다른 탭을 닫고 재시도하면 됩니다.';
+		notice.style.display = 'block';
+		barText.textContent = '오류';
+		barFill.style.background = '#9b3943';
+	}
+
+	const missing = Engine.getMissingFeatures({ threads: GODOT_THREADS_ENABLED });
+	if (missing.length !== 0) {
+		fail('이 브라우저가 지원하지 않는 기능: ' + missing.join(', '));
+		return;
+	}
+
+	const MB = 1024 * 1024;
+	engine.startGame({
+		'onProgress': function (current, total) {
+			if (current > 0 && total > 0) {
+				const pct = Math.min(100, (current / total) * 100);
+				barFill.style.width = pct.toFixed(1) + '%';
+				barText.textContent = (current / MB).toFixed(1) + ' / ' + (total / MB).toFixed(1) + ' MB  ('
+					+ pct.toFixed(0) + '%)';
+			} else {
+				barText.textContent = '준비 중…';
+			}
+		},
+	}).then(() => {
+		barFill.style.width = '100%';
+		boot.classList.add('ready');
+	}, fail);
+
+	// 시작 탭은 단순한 연출이 아니다: 이 제스처가 있어야 iOS 에서 오디오가 풀리고
+	// 전체화면/방향고정 API 도 호출이 허용된다.
+	startBtn.addEventListener('click', async () => {
+		try {
+			if (document.documentElement.requestFullscreen) {
+				await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+			} else if (document.documentElement.webkitRequestFullscreen) {
+				document.documentElement.webkitRequestFullscreen();
+			}
+		} catch (e) { /* iOS Safari 등 미지원 — 홈화면 추가로 대체된다 */ }
+		try { await screen.orientation.lock('portrait'); } catch (e) { /* 지원 안 하면 무시 */ }
+
+		boot.classList.add('gone');
+		document.body.classList.add('playing');
+		setTimeout(() => boot.remove(), 400);
+		document.getElementById('canvas').focus();
+
+		// 서비스워커는 "게임이 이미 뜬 뒤에" 깐다. 초기 75MB 다운로드와 캐시 쓰기가
+		// 겹치면 느린 회선에서 첫 진입만 더 늦어진다. 실패해도 게임에는 영향이 없다.
+		if (GODOT_CONFIG['serviceWorker'] && 'serviceWorker' in navigator) {
+			engine.installServiceWorker().catch((e) => console.warn('SW 설치 실패(무시 가능):', e));
+		}
+	});
+}());
+	</script>
+</body>
+</html>
+
