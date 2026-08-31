@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>구글 로그인 처리 중…</title>
+</head>
+<body>
+<p>구글 로그인을 처리하는 중입니다. 이 창은 자동으로 닫힙니다…</p>
+<script>
+// 팝업으로 열린 창이다. Google 은 OIDC 암묵적 흐름(response_type=id_token)이라 결과를
+// 쿼리 문자열이 아니라 URL 조각(#id_token=…&state=…)에 싣는다 — 서버에 로그가 안 남는
+// 자리라 여기서만 읽을 수 있다.
+//
+// window.opener 로 원래 창(게임 탭)에 결과를 넘긴다. `scripts/net/GooglePlay.gd` 의
+// `_web_js()` 가 여는 팝업 · 듣는 리스너와 짝이다 — 메시지 모양(`slot_google` 키,
+// id_token/state/error 필드)이 어긋나면 저쪽이 못 알아듣는다.
+(function () {
+  var hash = window.location.hash.replace(/^#/, "");
+  var params = {};
+  hash.split("&").forEach(function (pair) {
+    if (!pair) { return; }
+    var kv = pair.split("=");
+    params[decodeURIComponent(kv[0])] = decodeURIComponent(kv[1] || "");
+  });
+  // 구현에 따라 오류가 조각이 아니라 쿼리 문자열로 올 수도 있다 — 둘 다 본다.
+  var qs = new URLSearchParams(window.location.search);
+
+  var msg = {
+    id_token: params["id_token"] || "",
+    state: params["state"] || qs.get("state") || "",
+    error: params["error"] || qs.get("error") || "",
+  };
+
+  var target = window.location.origin;
+  if (window.opener) {
+    try {
+      window.opener.postMessage({ slot_google: msg }, target);
+    } catch (e) {
+      // opener 가 이미 닫혔거나 접근이 막혔다 — 이 창을 열어 둬 봐야 아무도 못 받는다.
+    }
+  }
+  window.close();
+  // 팝업 차단 확장 등으로 자동 close 가 막히는 브라우저 대비 — 사용자가 직접 닫을 수 있게.
+  document.body.innerText = "로그인 완료. 이 창을 닫아도 됩니다. / Signed in. You may close this window.";
+})();
+</script>
+</body>
+</html>
